@@ -160,11 +160,11 @@
     <div class="board-shell"><div class="board" id="board" aria-label="头像分级榜"></div></div>
     <div class="board-footer"><span id="interaction-note">拖动头像归类 · 双击头像改姓名 · 点击行名编辑</span><button id="add-row" class="quiet">＋ 添加一行</button></div>
     <section class="pool-section" aria-label="待选头像">
-      <div class="pool-heading"><h2>待选头像<span id="pool-count" class="pool-count"></span></h2><div class="pool-tools"><button class="quiet" id="load-demo">载入示例</button><button class="quiet" id="reset-layout">清空排位</button><div class="replay-tools"><select id="replay-interval" aria-label="回放移动间隔"><option value="600">间隔 0.6 秒</option><option value="1000" selected>间隔 1 秒</option><option value="1600">间隔 1.6 秒</option><option value="2500">间隔 2.5 秒</option></select><button id="replay" class="replay-start">▶ 回放移动</button><button id="stop-replay" class="replay-stop">停止回放</button></div></div></div>
+      <div class="pool-heading"><h2>待选头像<span id="pool-count" class="pool-count"></span></h2><div class="pool-tools"><button class="quiet" id="load-demo">载入示例</button><button class="quiet danger" id="clear-pool">清空待选头像</button><button class="quiet" id="reset-layout">清空排位</button><div class="replay-tools"><select id="replay-interval" aria-label="回放移动间隔"><option value="600">间隔 0.6 秒</option><option value="1000" selected>间隔 1 秒</option><option value="1600">间隔 1.6 秒</option><option value="2500">间隔 2.5 秒</option></select><button id="replay" class="replay-start">▶ 回放移动</button><button id="stop-replay" class="replay-stop">停止回放</button></div></div></div>
       <div id="pool" class="pool" aria-label="待选区"></div>
     </section>
   </main>
-  <div class="present-controls"><label class="check-control"><input type="checkbox" id="present-pool" checked>待选区</label><button id="present-replay" class="replay-start">▶ 回放</button><button id="present-stop" class="replay-stop">停止</button><button id="exit-present">退出 · Esc</button></div>
+  <div class="present-controls"><label class="check-control"><input type="checkbox" id="present-pool" checked>待选区</label><button id="present-reset-layout">清空排位</button><button id="present-replay" class="replay-start">▶ 回放</button><button id="present-stop" class="replay-stop">停止</button><button id="exit-present">退出 · Esc</button></div>
   <dialog id="row-dialog"><form id="row-form"><h2>编辑分级行</h2><label class="field">分级名称<textarea id="row-name" required maxlength="100"></textarea></label><div class="field">背景颜色<div class="color-options" id="color-options"></div></div><div class="dialog-secondary"><button type="button" id="delete-row" class="quiet danger">删除此行</button><div><button type="button" id="row-up">↑ 上移</button> <button type="button" id="row-down">↓ 下移</button></div></div><div class="dialog-actions"><button type="button" data-close="row-dialog">取消</button><button class="primary" type="submit">保存</button></div></form></dialog>
   <dialog id="card-dialog"><form id="card-form"><h2>编辑头像</h2><img id="card-preview" class="card-preview" alt="当前头像"><label class="field">姓名<input id="card-name" type="text" maxlength="100" required></label><div class="dialog-secondary"><button type="button" id="delete-card" class="quiet danger">移除头像</button><button type="button" id="return-card">移回待选区</button></div><div class="dialog-actions"><button type="button" data-close="card-dialog">取消</button><button class="primary" type="submit">保存</button></div></form></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -371,6 +371,8 @@
       $('board-info').textContent = project.rows.length + ' 个分级 · ' + Object.keys(project.cards).length + ' 张头像';
       $('undo').disabled = !undoStack.length || replay.active;
       $('redo').disabled = !redoStack.length || replay.active;
+      $('clear-pool').disabled = !project.pool.length || replay.active;
+      $('present-reset-layout').disabled = replay.active;
       $('replay').disabled = !project.moves.length;
       $('present-replay').disabled = !project.moves.length;
       updateSelection();
@@ -684,7 +686,7 @@
       replay.cancelled = false;
       selectedCard = null;
       document.body.classList.add('replaying');
-      document.querySelectorAll('.app-header button, .app-header input, .app-header select, #load-demo, #reset-layout, #add-row').forEach(element => { element.disabled = true; });
+      document.querySelectorAll('.app-header button, .app-header input, .app-header select, #load-demo, #clear-pool, #reset-layout, #present-reset-layout, #add-row').forEach(element => { element.disabled = true; });
       const moves = [...project.moves];
       applyLayout(project.baseline);
       render();
@@ -704,7 +706,7 @@
       replay.original = null;
       replay.active = false;
       document.body.classList.remove('replaying');
-      document.querySelectorAll('.app-header button, .app-header input, .app-header select, #load-demo, #reset-layout, #add-row').forEach(element => { element.disabled = false; });
+      document.querySelectorAll('.app-header button, .app-header input, .app-header select, #load-demo, #clear-pool, #reset-layout, #present-reset-layout, #add-row').forEach(element => { element.disabled = false; });
       render();
       saveLocally();
       notify(cancelled ? '已停止回放' : '移动回放完成');
@@ -771,6 +773,29 @@
       } else document.body.classList.remove('pool-hidden');
     }
 
+    function clearPendingAvatars() {
+      if (replay.active || importBusy || !project.pool.length) return;
+      checkpoint();
+      const count = project.pool.length;
+      project.pool.forEach(id => { delete project.cards[id]; });
+      project.pool = [];
+      selectedCard = null;
+      resetRecording();
+      changed();
+      notify(`已清空 ${count} 张待选头像，可撤销。移动记录已重新开始`);
+    }
+
+    function resetLayout() {
+      if (replay.active || importBusy) return;
+      checkpoint();
+      project.pool = [...project.rows.flatMap(row => row.items), ...project.pool];
+      project.rows.forEach(row => { row.items = []; });
+      resetRecording();
+      selectedCard = null;
+      changed(true);
+      notify('头像已移回待选区，移动记录已重新开始');
+    }
+
     function bindEvents() {
       $('import-images').onclick = () => $('images-input').click();
       $('images-input').onchange = event => importImages(event.target.files);
@@ -787,6 +812,9 @@
       $('present-replay').onclick = playMoves;
       $('stop-replay').onclick = stopReplay;
       $('present-stop').onclick = stopReplay;
+      $('clear-pool').onclick = clearPendingAvatars;
+      $('reset-layout').onclick = resetLayout;
+      $('present-reset-layout').onclick = resetLayout;
       $('project-title').onchange = event => { checkpoint(); project.title = event.target.value.trim() || '我的头像分级榜'; changed(); };
       for (const [id, option] of [['card-size', 'cardSize'], ['label-width', 'labelWidth']]) {
         $(id).addEventListener('pointerdown', () => { if (!replay.active) checkpoint(); });
@@ -816,16 +844,6 @@
         }
         changed();
         notify('已载入参考图中的 6 张示例头像，可以开始拖动');
-      };
-      $('reset-layout').onclick = () => {
-        if (replay.active || importBusy) return;
-        checkpoint();
-        project.pool = [...project.rows.flatMap(row => row.items), ...project.pool];
-        project.rows.forEach(row => { row.items = []; });
-        resetRecording();
-        selectedCard = null;
-        changed(true);
-        notify('头像已移回待选区，移动记录已重新开始');
       };
       $('add-row').onclick = () => {
         checkpoint();
