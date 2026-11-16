@@ -112,7 +112,7 @@
     .dialog-secondary button { padding: 6px 9px; font-size: 12px; }
     .card-preview { width: 110px; height: 110px; display: block; border-radius: 7px; object-fit: cover; margin: 0 auto 20px; }
     .present-controls { display: none; }
-    body.presenting { background: #191c18; }
+    body.presenting { background: #191c18; min-height: 100vh; }
     .presenting .app-header, .presenting .workspace-meta, .presenting .board-footer, .presenting .pool-heading, .presenting .empty-pool { display: none; }
     .presenting .workspace { max-width: none; padding: 0; }
     .presenting .board-shell { border: 0; }
@@ -123,6 +123,7 @@
     .presenting .present-controls { display: flex; align-items: center; flex-wrap: wrap; justify-content: center; gap: 9px; position: fixed; right: 14px; bottom: 14px; z-index: 20; padding: 8px; border: 1px solid #ffffff35; border-radius: 10px; background: #171b16dd; opacity: .18; transition: opacity .15s; color: #e8ebdf; }
     .presenting .present-controls:hover, .presenting .present-controls:focus-within { opacity: 1; }
     .present-controls button { background: #ffffff10; color: #fff; border-color: #ffffff25; padding: 6px 10px; font-size: 12px; }
+    .present-controls button:hover:not(:disabled) { background: #ffffff25; border-color: #ffffff65; }
     .present-controls .check-control { color: #e8ebdf; }
     .presenting.pool-hidden .pool-section { display: none; }
     .replaying .board, .replaying .pool { pointer-events: none; }
