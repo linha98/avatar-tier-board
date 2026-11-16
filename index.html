@@ -53,19 +53,23 @@
     .save-state::before { content: ""; width: 5px; height: 5px; background: #829679; border-radius: 50%; }
     .save-state.warning { color: #a66a2b; }
     .save-state.warning::before { background: #bd873b; }
-    .board-shell { border: 1px solid #20251f; background: #191c18; }
-    .board { background: #191c18; }
-    .tier-row { display: flex; min-height: var(--card-size); border-bottom: 1px solid #191c18; position: relative; }
+    .board-shell { border: 1px solid #20251f; background: #191c18; overflow-x: auto; }
+    .board { background: #191c18; position: relative; }
+    .tier-row { display: flex; height: var(--card-size); border-bottom: 1px solid #606b56; position: relative; }
     .tier-row:last-child { border-bottom: 0; }
     .tier-label { display: flex; align-items: center; justify-content: center; position: relative; width: min(var(--label-width), 42vw); flex-shrink: 0; border: 0; border-radius: 0; padding: 16px; white-space: normal; border-right: 1px solid #191c18; background: var(--tier-color); color: var(--tier-ink); font-weight: 750; }
     .tier-label:hover:not(:disabled) { background: var(--tier-color); border-color: #191c18; }
-    .tier-label-text { font-size: clamp(17px, calc(var(--label-width) * .12), 32px); line-height: 1.35; overflow-wrap: anywhere; }
+    .tier-label-text { font-size: clamp(17px, calc(var(--label-width) * .12), 32px); line-height: 1.35; overflow-wrap: anywhere; max-height: 100%; overflow: hidden; }
     .tier-label-hint { position: absolute; font-size: 10px; font-weight: 500; right: 9px; bottom: 5px; opacity: 0; transition: opacity .15s; }
     .tier-label:hover .tier-label-hint, .tier-label:focus-visible .tier-label-hint { opacity: .6; }
-    .tier-items { display: flex; align-content: flex-start; align-items: flex-start; flex-wrap: wrap; flex: 1; min-width: 0; min-height: var(--card-size); position: relative; }
-    .tier-items:empty::after { content: "拖入头像"; align-self: center; margin: auto; color: #b0b9a0; font-size: 12px; opacity: 0; }
-    .tier-items:hover:empty::after, .tier-items.drop-over:empty::after { opacity: .45; }
+    .tier-items { flex: 1; min-width: 0; height: 100%; position: relative; }
     .tier-items.drop-over { box-shadow: inset 0 0 0 2px #dbe3cb80; }
+    .board-stage { position: absolute; left: min(var(--label-width), 42vw); right: 0; top: 0; bottom: 0; pointer-events: none; }
+    .board-stage > .avatar-card { position: absolute; pointer-events: auto; }
+    .placing .board-stage { background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(var(--card-size) - 1px), #ffffff22 calc(var(--card-size) - 1px), #ffffff22 var(--card-size)), repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--card-size) / 2 - 1px), #ffffff22 calc(var(--card-size) / 2 - 1px), #ffffff22 calc(var(--card-size) / 2)); }
+    .grid-drop-preview { display: none; position: absolute; z-index: 6; width: var(--card-size); height: var(--card-size); border: 2px solid #c5f890; background: #c5f89018; pointer-events: none; }
+    .grid-drop-preview.blocked { border-color: #f08c83; background: #f08c8328; }
+    .grid-snap-line { display: none; position: absolute; z-index: 1; left: 0; right: 0; height: 2px; background: #c5f890; pointer-events: none; }
     .avatar-card { width: var(--card-size); height: var(--card-size); flex: 0 0 var(--card-size); display: block; border: 0; border-radius: 0; padding: 0; background: #31372d; position: relative; user-select: none; touch-action: none; }
     .avatar-card:hover:not(:disabled) { background: #31372d; border: 0; }
     .avatar-card img { width: 100%; height: 100%; display: block; object-fit: cover; pointer-events: none; }
@@ -159,7 +163,7 @@
   <main class="workspace">
     <div class="workspace-meta"><span id="board-info"><strong>0</strong> 张头像</span><span class="save-state" id="save-state">正在载入</span></div>
     <div class="board-shell"><div class="board" id="board" aria-label="头像分级榜"></div></div>
-    <div class="board-footer"><span id="interaction-note">拖动头像归类 · 双击头像改姓名 · 点击行名编辑</span><button id="add-row" class="quiet">＋ 添加一行</button></div>
+    <div class="board-footer"><span id="interaction-note">拖到分界线可跨行 · 选中后方向键微调 · 双击改姓名</span><button id="add-row" class="quiet">＋ 添加一行</button></div>
     <section class="pool-section" aria-label="待选头像">
       <div class="pool-heading"><h2>待选头像<span id="pool-count" class="pool-count"></span></h2><div class="pool-tools"><button class="quiet" id="load-demo">载入示例</button><button class="quiet danger" id="clear-pool">清空待选头像</button><button class="quiet" id="reset-layout">清空排位</button><div class="replay-tools"><select id="replay-interval" aria-label="回放移动间隔"><option value="600">间隔 0.6 秒</option><option value="1000" selected>间隔 1 秒</option><option value="1600">间隔 1.6 秒</option><option value="2500">间隔 2.5 秒</option></select><button id="replay" class="replay-start">▶ 回放移动</button><button id="stop-replay" class="replay-stop">停止回放</button></div></div></div>
       <div id="pool" class="pool" aria-label="待选区"></div>
@@ -200,24 +204,67 @@
 
     function emptyProject(id = newId()) {
       const rows = defaultLabels.map((label, index) => ({ id: newId(), label, color: palette[index], items: [] }));
-      return { format: 'avatar-tier-board', version: 1, id, title: '我的头像分级榜', updatedAt: 0, options: { cardSize: 104, labelWidth: 210, showNames: true }, rows, cards: {}, pool: [], moves: [], baseline: { rows: Object.fromEntries(rows.map(row => [row.id, []])), pool: [] } };
+      return { format: 'avatar-tier-board', version: 2, id, title: '我的头像分级榜', updatedAt: 0, options: { cardSize: 104, labelWidth: 210, showNames: true }, rows, cards: {}, pool: [], positions: {}, moves: [], baseline: { rows: Object.fromEntries(rows.map(row => [row.id, []])), pool: [], positions: {} } };
+    }
+
+    function copyPositions(positions) {
+      return Object.fromEntries(Object.entries(positions || {}).map(([id, position]) => [id, { ...position }]));
+    }
+
+    function positionsForRows(rows) {
+      return Object.fromEntries(rows.flatMap(row => row.items.map((id, column) => [id, { rowId: row.id, column }])));
     }
 
     function copyLayout(layout) {
-      return { rows: Object.fromEntries(Object.entries(layout.rows).map(([id, items]) => [id, [...items]])), pool: [...layout.pool] };
+      return { rows: Object.fromEntries(Object.entries(layout.rows).map(([id, items]) => [id, [...items]])), pool: [...layout.pool], positions: copyPositions(layout.positions) };
     }
 
     function snapshot() {
-      return { ...project, options: { ...project.options }, rows: project.rows.map(row => ({ ...row, items: [...row.items] })), cards: { ...project.cards }, pool: [...project.pool], moves: project.moves.map(move => ({ ...move })), baseline: copyLayout(project.baseline) };
+      return { ...project, options: { ...project.options }, rows: project.rows.map(row => ({ ...row, items: [...row.items] })), cards: { ...project.cards }, pool: [...project.pool], positions: copyPositions(project.positions), moves: project.moves.map(move => ({ ...move, position: move.position ? { ...move.position } : null })), baseline: copyLayout(project.baseline) };
     }
 
     function currentLayout() {
-      return { rows: Object.fromEntries(project.rows.map(row => [row.id, [...row.items]])), pool: [...project.pool] };
+      return { rows: Object.fromEntries(project.rows.map(row => [row.id, [...row.items]])), pool: [...project.pool], positions: copyPositions(project.positions) };
     }
 
     function applyLayout(layout) {
       project.rows.forEach(row => { row.items = [...(layout.rows[row.id] || [])]; });
       project.pool = [...layout.pool];
+      project.positions = copyPositions(layout.positions);
+    }
+
+    function halfRow(position, rows = project.rows) {
+      return rows.findIndex(row => row.id === position.rowId) * 2 + Number(Boolean(position.nextRowId));
+    }
+
+    function validRowPair(position, rows = project.rows) {
+      const index = rows.findIndex(row => row.id === position.rowId);
+      return index >= 0 && (!position.nextRowId || rows[index + 1]?.id === position.nextRowId);
+    }
+
+    function canPlaceCard(id, position, positions = project.positions, rows = project.rows) {
+      if (!validRowPair(position, rows) || !Number.isInteger(position.column) || position.column < 0) return false;
+      const start = halfRow(position, rows);
+      return !Object.entries(positions).some(([otherId, other]) => otherId !== id && other.column === position.column && Math.abs(halfRow(other, rows) - start) < 2);
+    }
+
+    function firstFreePosition(id, rowId) {
+      const position = { rowId, column: 0 };
+      while (!canPlaceCard(id, position)) position.column++;
+      return position;
+    }
+
+    function returnToPool(ids) {
+      const removed = new Set(ids);
+      project.rows.forEach(row => { row.items = row.items.filter(id => !removed.has(id)); });
+      ids.forEach(id => { delete project.positions[id]; });
+      project.pool.push(...ids);
+    }
+
+    function releaseBrokenBoundaries() {
+      const ids = Object.entries(project.positions).filter(([, position]) => !validRowPair(position)).map(([id]) => id);
+      returnToPool(ids);
+      return ids.length;
     }
 
     function checkpoint() {
@@ -310,8 +357,9 @@
     function updateSelection() {
       document.querySelectorAll('.avatar-card').forEach(card => card.classList.toggle('selected', selectedCard === card.dataset.cardId));
       document.querySelectorAll('.tier-label-hint').forEach(hint => { hint.textContent = selectedCard ? '点击归入此行' : '编辑'; });
-      $('interaction-note').textContent = selectedCard ? '已选择 ' + project.cards[selectedCard].name + ' · 点击目标行即可归类 · Esc 取消' : '拖动头像归类 · 双击头像改姓名 · 点击行名编辑';
+      $('interaction-note').textContent = selectedCard ? '已选择 ' + project.cards[selectedCard].name + ' · 点击半格放置或用方向键微调 · Esc 取消' : '拖到分界线可跨行 · 选中后方向键微调 · 双击改姓名';
       $('interaction-note').classList.toggle('selection-note', Boolean(selectedCard));
+      document.body.classList.toggle('placing', Boolean(selectedCard) || Boolean(pointerDrag?.active));
     }
 
     function render(animate = false, origin = null) {
@@ -342,11 +390,34 @@
         const items = document.createElement('div');
         items.className = 'tier-items';
         items.dataset.containerId = row.id;
-        row.items.forEach(id => items.append(makeCard(id)));
         element.append(label, items);
         fragment.append(element);
       }
       $('board').replaceChildren(fragment);
+      const labelWidth = $('board').querySelector('.tier-label').getBoundingClientRect().width;
+      const columns = Math.max(1, ...Object.values(project.positions).map(position => position.column + 1));
+      $('board').style.minWidth = Math.ceil(labelWidth + columns * project.options.cardSize) + 'px';
+      const stage = document.createElement('div');
+      stage.className = 'board-stage';
+      for (const row of project.rows) {
+        for (const id of row.items) {
+          const position = project.positions[id];
+          const card = makeCard(id);
+          card.style.left = position.column * project.options.cardSize + 'px';
+          card.style.top = halfRow(position) * project.options.cardSize / 2 + 'px';
+          const label = position.nextRowId ? row.label + '与' + project.rows.find(row => row.id === position.nextRowId).label + '之间' : row.label;
+          card.title = project.cards[id].name + ' · ' + label + ' · 拖动归类，双击编辑';
+          stage.append(card);
+        }
+      }
+      const preview = document.createElement('div');
+      preview.className = 'grid-drop-preview';
+      preview.id = 'grid-drop-preview';
+      const snapLine = document.createElement('div');
+      snapLine.className = 'grid-snap-line';
+      snapLine.id = 'grid-snap-line';
+      stage.append(preview, snapLine);
+      $('board').append(stage);
       const pool = document.createDocumentFragment();
       project.pool.forEach(id => pool.append(makeCard(id)));
       if (!project.pool.length) {
@@ -397,22 +468,46 @@
       return id === 'pool' ? project.pool : project.rows.find(row => row.id === id).items;
     }
 
-    function moveCard(id, target, requestedIndex, record = true) {
+    function moveCard(id, target, requestedIndex, record = true, placement = null) {
       if (!project.cards[id]) return false;
       const source = project.pool.includes(id) ? 'pool' : project.rows.find(row => row.items.includes(id))?.id;
       if (!source) return false;
       const sourceItems = containerItems(source);
       const targetItems = containerItems(target);
       const oldIndex = sourceItems.indexOf(id);
-      let index = Math.min(requestedIndex ?? targetItems.length, targetItems.length);
-      if (source === target && oldIndex < index) index--;
-      if (source === target && oldIndex === index) return false;
+      let index = targetItems.length;
+      let position = null;
+      if (target === 'pool') {
+        index = Math.min(requestedIndex ?? targetItems.length, targetItems.length);
+        if (source === target && oldIndex < index) index--;
+        if (source === target && oldIndex === index) return false;
+      } else {
+        position = placement || firstFreePosition(id, target);
+        if (!canPlaceCard(id, position)) { notify('目标半格已被占用，请放到空列或其他半格'); return false; }
+        const previous = project.positions[id];
+        if (previous && previous.rowId === position.rowId && previous.nextRowId === position.nextRowId && previous.column === position.column) return false;
+      }
       if (record) checkpoint();
       sourceItems.splice(oldIndex, 1);
       targetItems.splice(index, 0, id);
-      if (record) project.moves.push({ id, target, index });
+      delete project.positions[id];
+      if (position) {
+        project.positions[id] = { ...position };
+        targetItems.sort((a, b) => project.positions[a].column - project.positions[b].column);
+        index = targetItems.indexOf(id);
+      }
+      if (record) project.moves.push({ id, target, index, position: position ? { ...position } : null });
       selectedCard = null;
       return true;
+    }
+
+    function applyRecordedMove(move) {
+      project.pool = project.pool.filter(id => id !== move.id);
+      project.rows.forEach(row => { row.items = row.items.filter(id => id !== move.id); });
+      delete project.positions[move.id];
+      containerItems(move.target).splice(move.index, 0, move.id);
+      if (move.legacy) project.positions = positionsForRows(project.rows);
+      else if (move.position) project.positions[move.id] = { ...move.position };
     }
 
     function placeSelected(target) {
@@ -422,23 +517,48 @@
 
     function clearDropHints() {
       document.querySelectorAll('.drop-over, .insert-before, .insert-after').forEach(element => element.classList.remove('drop-over', 'insert-before', 'insert-after'));
+      if ($('grid-drop-preview')) $('grid-drop-preview').style.display = 'none';
+      if ($('grid-snap-line')) $('grid-snap-line').style.display = 'none';
     }
 
     function dropLocation(event) {
-      const container = event.target.closest('[data-container-id]');
-      const row = event.target.closest('.tier-row');
-      const target = container?.dataset.containerId || row?.dataset.rowId;
-      if (!target) return null;
-      const card = event.target.closest('.avatar-card');
-      let index = containerItems(target).length;
-      let after = false;
-      if (card && card.dataset.cardId !== draggedCard) {
-        const bounds = card.getBoundingClientRect();
-        after = event.clientX > bounds.left + bounds.width / 2;
-        index = containerItems(target).indexOf(card.dataset.cardId) + Number(after);
+      const pool = $('pool').getBoundingClientRect();
+      const x = event.clientX;
+      const y = event.clientY;
+      if (x >= pool.left && x <= pool.right && y >= pool.top && y <= pool.bottom) {
+        const card = event.target?.closest('#pool .avatar-card');
+        let index = project.pool.length;
+        let after = false;
+        if (card) {
+          after = x > card.getBoundingClientRect().left + project.options.cardSize / 2;
+          index = project.pool.indexOf(card.dataset.cardId) + Number(after);
+          if (card.dataset.cardId === draggedCard) index = project.pool.indexOf(draggedCard);
+        }
+        return { target: 'pool', index, card, after, container: $('pool'), valid: true };
       }
-      if (card?.dataset.cardId === draggedCard) index = containerItems(target).indexOf(draggedCard);
-      return { target, index, card, after, container: container || row.querySelector('.tier-items') };
+      const bounds = $('board').getBoundingClientRect();
+      const label = $('board').querySelector('.tier-label').getBoundingClientRect();
+      if (x < bounds.left || x > bounds.right || y < bounds.top || y >= bounds.bottom) return null;
+      const size = project.options.cardSize;
+      const relativeY = y - bounds.top;
+      const rowIndex = Math.floor(relativeY / size);
+      const id = draggedCard || selectedCard;
+      let position;
+      if (x < label.right) position = firstFreePosition(id, project.rows[rowIndex].id);
+      else {
+        const boundary = Math.round(relativeY / size);
+        const between = boundary > 0 && boundary < project.rows.length && Math.abs(relativeY - boundary * size) <= Math.min(16, size * .15);
+        const row = between ? boundary - 1 : rowIndex;
+        position = { rowId: project.rows[row].id, column: Math.floor((x - label.right) / size) };
+        if (between) position.nextRowId = project.rows[boundary].id;
+      }
+      return { target: position.rowId, position, valid: canPlaceCard(id, position) };
+    }
+
+    function pointerLocation(drag) {
+      const x = drag.x - drag.offsetX + project.options.cardSize / 2;
+      const y = drag.y - drag.offsetY + project.options.cardSize / 2;
+      return dropLocation({ target: document.elementFromPoint(x, y), clientX: x, clientY: y });
     }
 
     function updatePointerDrag() {
@@ -446,18 +566,44 @@
       const drag = pointerDrag;
       drag.ghost.style.left = drag.x - drag.offsetX + 'px';
       drag.ghost.style.top = drag.y - drag.offsetY + 'px';
-      const target = document.elementFromPoint(drag.x, drag.y);
-      const location = target ? dropLocation({ target, clientX: drag.x, clientY: drag.y }) : null;
+      const location = pointerLocation(drag);
       clearDropHints();
       if (!location) return;
-      location.container.classList.add('drop-over');
-      if (location.card && location.card.dataset.cardId !== draggedCard) location.card.classList.add(location.after ? 'insert-after' : 'insert-before');
+      if (location.target === 'pool') {
+        location.container.classList.add('drop-over');
+        if (location.card && location.card.dataset.cardId !== draggedCard) location.card.classList.add(location.after ? 'insert-after' : 'insert-before');
+        return;
+      }
+      const position = location.position;
+      const size = project.options.cardSize;
+      const left = position.column * size;
+      const top = halfRow(position) * size / 2;
+      const preview = $('grid-drop-preview');
+      preview.style.display = 'block';
+      preview.style.left = left + 'px';
+      preview.style.top = top + 'px';
+      preview.classList.toggle('blocked', !location.valid);
+      if (position.nextRowId) {
+        $('grid-snap-line').style.display = 'block';
+        $('grid-snap-line').style.top = top + size / 2 + 'px';
+      }
+      if (location.valid) {
+        const stage = $('board').querySelector('.board-stage').getBoundingClientRect();
+        drag.ghost.style.left = stage.left + left + 'px';
+        drag.ghost.style.top = stage.top + top + 'px';
+      }
     }
 
     function scrollWhileDragging() {
       if (!pointerDrag?.active) return;
       if (pointerDrag.y < 55) window.scrollBy(0, -12);
       else if (pointerDrag.y > innerHeight - 55) window.scrollBy(0, 12);
+      const shell = $('board').parentElement;
+      const bounds = shell.getBoundingClientRect();
+      if (pointerDrag.y >= bounds.top && pointerDrag.y <= bounds.bottom) {
+        if (pointerDrag.x < bounds.left + 35) shell.scrollBy(-12, 0);
+        else if (pointerDrag.x > bounds.right - 35) shell.scrollBy(12, 0);
+      }
       updatePointerDrag();
       requestAnimationFrame(scrollWhileDragging);
     }
@@ -469,6 +615,7 @@
       pointerDrag = null;
       draggedCard = null;
       clearDropHints();
+      document.body.classList.toggle('placing', Boolean(selectedCard));
     }
 
     async function imageToData(file) {
@@ -555,7 +702,7 @@
     }
 
     function validateProject(value) {
-      if (value?.format !== 'avatar-tier-board' || value.version !== 1 || !Array.isArray(value.rows) || !value.rows.length || !value.cards || !Array.isArray(value.pool) || !value.baseline || !Array.isArray(value.moves)) throw new Error('请选择本工具保存的完整 HTML');
+      if (value?.format !== 'avatar-tier-board' || ![1, 2].includes(value.version) || !Array.isArray(value.rows) || !value.rows.length || !value.cards || !Array.isArray(value.pool) || !value.baseline || !Array.isArray(value.moves)) throw new Error('请选择本工具保存的完整 HTML');
       const placed = new Set();
       for (const id of [...value.pool, ...value.rows.flatMap(row => row.items)]) {
         if (!value.cards[id] || placed.has(id)) throw new Error('榜单中的头像数据不完整');
@@ -567,7 +714,26 @@
       }
       value.options.cardSize = Math.max(64, Math.min(180, Number(value.options.cardSize) || 104));
       value.options.labelWidth = Math.max(120, Math.min(360, Number(value.options.labelWidth) || 210));
+      if (value.version === 1) {
+        value.positions = positionsForRows(value.rows);
+        value.baseline.positions = positionsForRows(value.rows.map(row => ({ ...row, items: value.baseline.rows[row.id] || [] })));
+        value.moves = value.moves.map(move => ({ ...move, legacy: true }));
+        value.version = 2;
+      }
+      validatePositions(value.rows, value.positions);
+      validatePositions(value.rows.map(row => ({ ...row, items: value.baseline.rows[row.id] || [] })), value.baseline.positions);
       return value;
+    }
+
+    function validatePositions(rows, positions) {
+      const count = rows.reduce((total, row) => total + row.items.length, 0);
+      if (!positions || Object.keys(positions).length !== count) throw new Error('榜单的头像位置数据不完整');
+      for (const row of rows) {
+        for (const id of row.items) {
+          const position = positions[id];
+          if (!position || position.rowId !== row.id || !canPlaceCard(id, position, positions, rows)) throw new Error('榜单存在重叠或失效的头像位置');
+        }
+      }
     }
 
     async function openProject(file) {
@@ -635,38 +801,49 @@
         context.scale(2, 2);
         context.fillStyle = '#191c18';
         context.fillRect(0, 0, bounds.width, bounds.height);
-        for (const row of project.rows) {
+        const showNames = project.options.showNames;
+        const downloadName = filename();
+        const exportedRows = project.rows.map(row => {
           const element = [...$('board').children].find(element => element.dataset.rowId === row.id);
-          const label = element.querySelector('.tier-label').getBoundingClientRect();
+          return { row: { ...row }, label: element.querySelector('.tier-label').getBoundingClientRect(), rect: element.getBoundingClientRect() };
+        });
+        const exportedCards = project.rows.flatMap(row => row.items.map(id => ({
+          card: { ...project.cards[id] },
+          rect: $('board').querySelector(`[data-card-id="${id}"]`).getBoundingClientRect()
+        })));
+        for (const { row, label, rect } of exportedRows) {
           drawLabel(context, row, label, label.left - bounds.left, label.top - bounds.top);
-          for (const id of row.items) {
-            const card = project.cards[id];
-            const rect = element.querySelector(`[data-card-id="${id}"]`).getBoundingClientRect();
-            const image = await loadImage(card.src);
-            const crop = Math.min(image.naturalWidth, image.naturalHeight);
-            const x = rect.left - bounds.left;
-            const y = rect.top - bounds.top;
-            context.drawImage(image, (image.naturalWidth - crop) / 2, (image.naturalHeight - crop) / 2, crop, crop, x, y, rect.width, rect.height);
-            if (project.options.showNames) {
-              context.fillStyle = '#0009';
-              context.fillRect(x, y + rect.height - 22, rect.width, 22);
-              context.font = '650 12px -apple-system, "PingFang SC", sans-serif';
-              context.fillStyle = '#fff';
-              context.textAlign = 'center';
-              context.textBaseline = 'middle';
-              context.fillText(fitCaption(context, card.name, rect.width - 10), x + rect.width / 2, y + rect.height - 11);
-            }
-          }
           context.strokeStyle = '#191c18';
           context.lineWidth = 1;
           context.beginPath();
           context.moveTo(label.right - bounds.left - .5, label.top - bounds.top);
           context.lineTo(label.right - bounds.left - .5, label.bottom - bounds.top);
           context.stroke();
+          context.strokeStyle = '#606b56';
+          context.beginPath();
+          context.moveTo(0, rect.bottom - bounds.top - .5);
+          context.lineTo(bounds.width, rect.bottom - bounds.top - .5);
+          context.stroke();
+        }
+        for (const { card, rect } of exportedCards) {
+          const image = await loadImage(card.src);
+          const crop = Math.min(image.naturalWidth, image.naturalHeight);
+          const x = rect.left - bounds.left;
+          const y = rect.top - bounds.top;
+          context.drawImage(image, (image.naturalWidth - crop) / 2, (image.naturalHeight - crop) / 2, crop, crop, x, y, rect.width, rect.height);
+          if (showNames) {
+            context.fillStyle = '#0009';
+            context.fillRect(x, y + rect.height - 22, rect.width, 22);
+            context.font = '650 12px -apple-system, "PingFang SC", sans-serif';
+            context.fillStyle = '#fff';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText(fitCaption(context, card.name, rect.width - 10), x + rect.width / 2, y + rect.height - 11);
+          }
         }
         const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
         if (!blob) throw new Error('图片导出失败');
-        download(blob, filename() + '.png');
+        download(blob, downloadName + '.png');
         notify(`已导出 ${canvas.width} × ${canvas.height} PNG 图片`);
       } catch (error) { notify(error.message || '图片导出失败'); }
       $('export-png').disabled = false;
@@ -694,10 +871,7 @@
       await waitForReplay(650);
       for (let index = 0; index < moves.length && !replay.cancelled; index++) {
         const move = moves[index];
-        // 记录的下标是移除原卡片后的下标，回放时直接使用。
-        project.pool = project.pool.filter(id => id !== move.id);
-        project.rows.forEach(row => { row.items = row.items.filter(id => id !== move.id); });
-        containerItems(move.target).splice(move.index, 0, move.id);
+        applyRecordedMove(move);
         render(true);
         $('board-info').textContent = `回放 ${index + 1} / ${moves.length}`;
         await waitForReplay(Number($('replay-interval').value));
@@ -737,9 +911,11 @@
       if (target < 0 || target >= project.rows.length) return;
       checkpoint();
       [project.rows[index], project.rows[target]] = [project.rows[target], project.rows[index]];
+      const returned = releaseBrokenBoundaries();
+      if (returned) resetRecording();
       changed();
       $('row-dialog').close();
-      notify('分级行顺序已更新');
+      notify(returned ? `分级行顺序已更新，${returned} 张跨行头像已移回待选区` : '分级行顺序已更新');
     }
 
     function showCardEditor(id) {
@@ -791,6 +967,7 @@
       checkpoint();
       project.pool = [...project.rows.flatMap(row => row.items), ...project.pool];
       project.rows.forEach(row => { row.items = []; });
+      project.positions = {};
       resetRecording();
       selectedCard = null;
       changed(true);
@@ -869,8 +1046,9 @@
         if (project.rows.length === 1) return;
         checkpoint();
         const row = project.rows.find(row => row.id === editingRow);
-        project.pool.push(...row.items);
+        returnToPool([...row.items]);
         project.rows = project.rows.filter(row => row.id !== editingRow);
+        releaseBrokenBoundaries();
         resetRecording();
         $('row-dialog').close();
         changed();
@@ -887,6 +1065,7 @@
         checkpoint();
         project.pool = project.pool.filter(id => id !== editingCard);
         project.rows.forEach(row => { row.items = row.items.filter(id => id !== editingCard); });
+        delete project.positions[editingCard];
         delete project.cards[editingCard];
         resetRecording();
         $('card-dialog').close();
@@ -909,6 +1088,11 @@
           return;
         }
         const container = event.target.closest('[data-container-id]');
+        if (selectedCard && $('board').contains(event.target)) {
+          const location = dropLocation(event);
+          if (location && moveCard(selectedCard, location.target, location.index, true, location.position)) changed(true);
+          return;
+        }
         if (container && selectedCard) { placeSelected(container.dataset.containerId); return; }
         if (event.target.closest('.empty-pool')) $('images-input').click();
       });
@@ -937,6 +1121,7 @@
           drag.ghost.setAttribute('aria-hidden', 'true');
           drag.ghost.tabIndex = -1;
           drag.source.classList.add('dragging');
+          document.body.classList.add('placing');
           document.body.append(drag.ghost);
           requestAnimationFrame(scrollWhileDragging);
         }
@@ -947,13 +1132,15 @@
         const drag = pointerDrag;
         if (!drag.active) { finishPointerDrag(); return; }
         event.preventDefault();
-        const target = document.elementFromPoint(event.clientX, event.clientY);
-        const location = target ? dropLocation({ target, clientX: event.clientX, clientY: event.clientY }) : null;
+        drag.x = event.clientX;
+        drag.y = event.clientY;
+        const location = pointerLocation(drag);
         const origin = { id: drag.id, rect: drag.ghost.getBoundingClientRect() };
         const id = drag.id;
         suppressClickUntil = performance.now() + 250;
         finishPointerDrag();
-        if (location && moveCard(id, location.target, location.index)) changed(true, origin);
+        if (location && moveCard(id, location.target, location.index, true, location.position)) changed(true, origin);
+        else render(true, origin);
       });
       document.addEventListener('pointercancel', finishPointerDrag);
       document.addEventListener('dragstart', event => { if (event.target.closest('.avatar-card')) event.preventDefault(); });
@@ -968,7 +1155,8 @@
       document.addEventListener('dragend', clearDropHints);
       document.addEventListener('keydown', event => {
         if (event.key === 'Escape') {
-          if (replay.active) stopReplay();
+          if (pointerDrag) finishPointerDrag();
+          else if (replay.active) stopReplay();
           else if (document.querySelector('dialog[open]')) return;
           else if (document.body.classList.contains('presenting')) setPresent(false);
           else { selectedCard = null; render(); }
@@ -976,6 +1164,23 @@
         }
         if (event.target.matches('input, textarea, select, [contenteditable]')) return;
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); undo(event.shiftKey); }
+        const offsets = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+        if (selectedCard && project.positions[selectedCard] && offsets[event.key] && !replay.active) {
+          event.preventDefault();
+          const id = selectedCard;
+          const current = project.positions[id];
+          const offset = offsets[event.key];
+          const half = halfRow(current) + offset[1];
+          if (half < 0 || half > (project.rows.length - 1) * 2) return;
+          const rowIndex = Math.floor(half / 2);
+          const position = { rowId: project.rows[rowIndex].id, column: current.column + offset[0] };
+          if (half % 2) position.nextRowId = project.rows[rowIndex + 1].id;
+          if (moveCard(id, position.rowId, undefined, true, position)) {
+            selectedCard = id;
+            changed(true);
+          }
+          return;
+        }
         if (selectedCard && /^[1-9]$/.test(event.key)) {
           const row = project.rows[Number(event.key) - 1];
           if (row) { event.preventDefault(); placeSelected(row.id); }
@@ -996,6 +1201,7 @@
       colorInput.id = 'row-color';
       colorInput.setAttribute('aria-label', '自定义行背景颜色');
       options.append(colorInput);
+      window.addEventListener('resize', () => { if (!pointerDrag?.active) render(); });
     }
 
     async function initialize() {
