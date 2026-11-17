@@ -90,6 +90,11 @@
     .pool-count { font-size: 11px; font-weight: 450; color: #7a8271; margin-left: 6px; }
     .pool-tools { display: flex; align-items: center; gap: 6px; }
     .pool-tools button { font-size: 12px; padding: 5px 9px; }
+    .pool-search-bar { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
+    .pool-search-bar input { width: 290px; min-width: 0; max-width: 100%; border: 1px solid #cfd5c6; border-radius: 7px; padding: 9px 11px; background: #fff; color: #242725; font-size: 13px; }
+    .pool-search-bar button { padding: 7px 10px; font-size: 12px; }
+    .pool-search-bar .pool-count { margin: 0; flex-shrink: 0; }
+    .pool-no-results { width: 100%; padding: 28px 10px; text-align: center; color: #6e7964; font-size: 13px; }
     .pool { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 8px; min-height: 90px; }
     .pool.drop-over { outline: 2px dashed #8e9f82; outline-offset: 6px; }
     .empty-pool { min-height: 100px; width: 100%; display: flex; justify-content: center; align-items: center; flex-direction: column; gap: 7px; border: 1px dashed #ced3c3; border-radius: 5px; color: #6e7964; cursor: pointer; font-size: 13px; }
@@ -121,6 +126,10 @@
     .presenting .workspace { max-width: none; padding: 0; }
     .presenting .board-shell { border: 0; }
     .presenting .pool-section { background: #191c18; padding: 14px 10px; margin-top: 1px; border: 0; border-radius: 0; }
+    .presenting .pool-search-bar input { background: #252b22; color: #f0f3e9; border-color: #505a47; }
+    .presenting .pool-search-bar input::placeholder { color: #a8b29e; }
+    .presenting .pool-search-bar button { background: #252b22; color: #e8ebdf; border-color: #505a47; }
+    .presenting .pool-count, .presenting .pool-no-results { color: #a8b29e; }
     .presenting .pool { gap: 0; min-height: var(--card-size); }
     .presenting .pool .avatar-card, .presenting .pool .avatar-card img, .presenting .pool .avatar-caption { border-radius: 0; }
     .presenting .tier-label-hint { display: none; }
@@ -148,7 +157,7 @@
         <button id="save-html">保存完整 HTML</button>
         <button id="export-png">导出图片</button>
         <span class="divider" aria-hidden="true"></span>
-        <button id="present">录制模式</button>
+        <button id="present">展示模式</button>
         <details class="project-menu" id="project-menu"><summary>更多 ▾</summary><div class="menu-popover"><button id="open-project">打开已保存榜单</button><button id="new-project">新建空白榜单</button></div></details>
       </div>
     </div>
@@ -165,7 +174,12 @@
     <div class="board-shell"><div class="board" id="board" aria-label="头像分级榜"></div></div>
     <div class="board-footer"><span id="interaction-note">拖到分界线可跨行 · 选中后方向键微调 · 双击改姓名</span><button id="add-row" class="quiet">＋ 添加一行</button></div>
     <section class="pool-section" aria-label="待选头像">
-      <div class="pool-heading"><h2>待选头像<span id="pool-count" class="pool-count"></span></h2><div class="pool-tools"><button class="quiet" id="load-demo">载入示例</button><button class="quiet danger" id="clear-pool">清空待选头像</button><button class="quiet" id="reset-layout">清空排位</button><div class="replay-tools"><select id="replay-interval" aria-label="回放移动间隔"><option value="600">间隔 0.6 秒</option><option value="1000" selected>间隔 1 秒</option><option value="1600">间隔 1.6 秒</option><option value="2500">间隔 2.5 秒</option></select><button id="replay" class="replay-start">▶ 回放移动</button><button id="stop-replay" class="replay-stop">停止回放</button></div></div></div>
+      <div class="pool-heading"><h2>待选头像</h2><div class="pool-tools"><button class="quiet" id="load-demo">载入示例</button><button class="quiet danger" id="clear-pool">清空待选头像</button><button class="quiet" id="reset-layout">清空排位</button><div class="replay-tools"><select id="replay-interval" aria-label="回放移动间隔"><option value="600">间隔 0.6 秒</option><option value="1000" selected>间隔 1 秒</option><option value="1600">间隔 1.6 秒</option><option value="2500">间隔 2.5 秒</option></select><button id="replay" class="replay-start">▶ 回放移动</button><button id="stop-replay" class="replay-stop">停止回放</button></div></div></div>
+      <div class="pool-search-bar" role="search" aria-label="搜索待选头像">
+        <input id="pool-search" type="search" aria-label="搜索待选头像姓名" placeholder="搜索姓名或多个关键词" title="支持部分字、间隔字，多个关键词用空格分开" autocomplete="off">
+        <button id="clear-search" type="button" disabled>清除搜索</button>
+        <span id="pool-count" class="pool-count" role="status" aria-live="polite" aria-atomic="true"></span>
+      </div>
       <div id="pool" class="pool" aria-label="待选区"></div>
     </section>
   </main>
@@ -362,6 +376,59 @@
       document.body.classList.toggle('placing', Boolean(selectedCard) || Boolean(pointerDrag?.active));
     }
 
+    function normalizeSearchText(value) {
+      return value.normalize('NFKC').toLowerCase().replace(/[\s\p{P}]+/gu, '');
+    }
+
+    function matchesSearch(name, terms) {
+      const normalized = normalizeSearchText(name);
+      return terms.every(term => {
+        let cursor = 0;
+        for (const character of term) {
+          const index = normalized.indexOf(character, cursor);
+          if (index === -1) return false;
+          cursor = index + character.length;
+        }
+        return true;
+      });
+    }
+
+    function renderPool() {
+      const query = $('pool-search').value;
+      const terms = query.normalize('NFKC').trim().split(/\s+/u).map(normalizeSearchText).filter(Boolean);
+      const matches = project.pool.filter(id => matchesSearch(project.cards[id].name, terms));
+      if (selectedCard && project.pool.includes(selectedCard) && !matches.includes(selectedCard)) selectedCard = null;
+      const pool = document.createDocumentFragment();
+      matches.forEach(id => pool.append(makeCard(id)));
+      if (!project.pool.length) {
+        const empty = document.createElement('button');
+        empty.type = 'button';
+        empty.className = 'empty-pool';
+        const line = document.createElement('span');
+        line.textContent = Object.keys(project.cards).length ? '所有头像均已归类' : '导入头像，开始排列';
+        const sub = document.createElement('small');
+        sub.textContent = '选择图片或把图片文件拖到这里 · 文件名自动作为姓名';
+        empty.append(line, sub);
+        pool.append(empty);
+      } else if (!matches.length) {
+        const empty = document.createElement('div');
+        empty.className = 'pool-no-results';
+        empty.textContent = '没有匹配的待选头像';
+        pool.append(empty);
+      }
+      $('pool').replaceChildren(pool);
+      $('pool').dataset.containerId = 'pool';
+      $('pool-count').textContent = terms.length ? `${matches.length} / ${project.pool.length} 张` : project.pool.length + ' 张';
+      $('clear-search').disabled = !query;
+    }
+
+    function clearPoolSearch() {
+      $('pool-search').value = '';
+      renderPool();
+      updateSelection();
+      $('pool-search').focus();
+    }
+
     function render(animate = false, origin = null) {
       const previous = new Map();
       if (animate) document.querySelectorAll('.avatar-card').forEach(card => previous.set(card.dataset.cardId, card.getBoundingClientRect()));
@@ -418,28 +485,13 @@
       snapLine.id = 'grid-snap-line';
       stage.append(preview, snapLine);
       $('board').append(stage);
-      const pool = document.createDocumentFragment();
-      project.pool.forEach(id => pool.append(makeCard(id)));
-      if (!project.pool.length) {
-        const empty = document.createElement('button');
-        empty.type = 'button';
-        empty.className = 'empty-pool';
-        const line = document.createElement('span');
-        line.textContent = Object.keys(project.cards).length ? '所有头像均已归类' : '导入头像，开始排列';
-        const sub = document.createElement('small');
-        sub.textContent = '选择图片或把图片文件拖到这里 · 文件名自动作为姓名';
-        empty.append(line, sub);
-        pool.append(empty);
-      }
-      $('pool').replaceChildren(pool);
-      $('pool').dataset.containerId = 'pool';
+      renderPool();
       $('project-title').value = project.title;
       $('card-size').value = project.options.cardSize;
       $('label-width').value = project.options.labelWidth;
       $('card-size-value').value = project.options.cardSize;
       $('label-width-value').value = project.options.labelWidth;
       $('show-names').checked = project.options.showNames;
-      $('pool-count').textContent = project.pool.length + ' 张';
       $('board-info').textContent = project.rows.length + ' 个分级 · ' + Object.keys(project.cards).length + ' 张头像';
       $('undo').disabled = !undoStack.length || replay.active;
       $('redo').disabled = !redoStack.length || replay.active;
@@ -946,7 +998,7 @@
         document.body.classList.toggle('pool-hidden', !$('present-pool').checked);
         render();
         window.scrollTo(0, 0);
-        notify('录制模式已开启，右下角可回放和退出，也可按 Esc');
+        notify('展示模式已开启，右下角可回放和退出，也可按 Esc');
       } else document.body.classList.remove('pool-hidden');
     }
 
@@ -984,6 +1036,15 @@
       $('present').onclick = () => setPresent(true);
       $('exit-present').onclick = () => setPresent(false);
       $('present-pool').onchange = event => document.body.classList.toggle('pool-hidden', !event.target.checked);
+      $('pool-search').oninput = () => { renderPool(); updateSelection(); };
+      $('clear-search').onclick = clearPoolSearch;
+      $('pool-search').onkeydown = event => {
+        if (event.key === 'Escape' && event.target.value) {
+          event.preventDefault();
+          event.stopPropagation();
+          clearPoolSearch();
+        }
+      };
       $('undo').onclick = () => undo();
       $('redo').onclick = () => undo(true);
       $('replay').onclick = playMoves;
